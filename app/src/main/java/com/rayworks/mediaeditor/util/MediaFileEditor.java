@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.Arrays;
 import java.util.Locale;
 
@@ -72,12 +73,13 @@ public class MediaFileEditor {
         ffmpegSupported = false;
     }
 
-    public void execFFmpegBinary(final String[] command, final AudioMergeListener mergeListener) {
+    public void execFFmpegBinary(
+            final String[] command, final WeakReference<AudioMergeListener> mergeListener) {
         final String cmdStr = Arrays.toString(command);
 
         if (!isFFmpegSupported()) {
-            if (mergeListener != null) {
-                mergeListener.onFailure("Not supported on this device.");
+            if (mergeListener.get() != null) {
+                mergeListener.get().onFailure("Not supported on this device.");
             }
 
             return;
@@ -92,8 +94,8 @@ public class MediaFileEditor {
                                 public void onFailure(String s) {
                                     Timber.w("FAILED with output : " + s);
 
-                                    if (mergeListener != null) {
-                                        mergeListener.onFailure(s);
+                                    if (mergeListener.get() != null) {
+                                        mergeListener.get().onFailure(s);
                                     }
                                 }
 
@@ -110,16 +112,16 @@ public class MediaFileEditor {
                                 @Override
                                 public void onStart() {
                                     Timber.d("Started command : ffmpeg %s", cmdStr);
-                                    if (mergeListener != null) {
-                                        mergeListener.onStarted();
+                                    if (mergeListener.get() != null) {
+                                        mergeListener.get().onStarted();
                                     }
                                 }
 
                                 @Override
                                 public void onFinish() {
                                     Timber.d("Finished command : ffmpeg %s", cmdStr);
-                                    if (mergeListener != null) {
-                                        mergeListener.onComplete();
+                                    if (mergeListener.get() != null) {
+                                        mergeListener.get().onComplete();
                                     }
                                 }
                             });
@@ -145,10 +147,12 @@ public class MediaFileEditor {
             boolean demuxerEnabled,
             @NonNull String[] inputFilePaths,
             @NonNull File output,
-            @Nullable AudioMergeListener listener) {
+            @NonNull AudioMergeListener listener) {
 
         Preconditions.checkNotNull(output);
         Preconditions.checkArgument(inputFilePaths.length > 0, "Input audio files are not valid");
+
+        WeakReference<AudioMergeListener> mergeListener = new WeakReference<>(listener);
 
         if (output.exists()) { // delete the old one if any
             output.delete();
@@ -181,10 +185,10 @@ public class MediaFileEditor {
                 bufferedWriter.flush();
 
             } catch (FileNotFoundException e) {
-                onHandleException(listener, e);
+                onHandleException(mergeListener, e);
                 return;
             } catch (IOException e) {
-                onHandleException(listener, e);
+                onHandleException(mergeListener, e);
                 return;
             } finally {
                 IOUtils.closeQuietly(bufferedWriter);
@@ -225,14 +229,15 @@ public class MediaFileEditor {
 
         Timber.w(">>> Command string : %s", cmdStr);
 
-        execFFmpegBinary(command, listener);
+        execFFmpegBinary(command, mergeListener);
     }
 
-    private void onHandleException(@Nullable AudioMergeListener listener, Exception e) {
+    private void onHandleException(
+            @Nullable WeakReference<AudioMergeListener> listener, Exception e) {
         e.printStackTrace();
 
-        if (listener != null) {
-            listener.onFailure(e.getMessage());
+        if (listener.get() != null) {
+            listener.get().onFailure(e.getMessage());
         }
     }
 
